@@ -1,0 +1,205 @@
+ ML permite asociar valores con excepciones 
+
+ exception UnaPerra Excepcion of string 
+
+ fun dog "perra" = raise UnaPerraExcepcion "1er pattern"
+ | dog "bitch" = raise UnaPerraExcepcion "2do pattern"
+ | dog "Cattaneo" = raise UnaPerraExcepcion "auch!"
+ | dog n = n;
+
+ Nótese que la excepcion se porta como el constructor de un datatype.
+
+ El valor se captura con pattern-matching.
+
+ Ejemplo:
+
+ ( dog "Cattaneo" ) handle UnaPerraExcepcion s => s;
+
+ Por supuesto, se pueden capturar muchas excepciones en un solo handle:
+
+ ( dog "etc" )
+	handle UnaPerraExcepcion s => s
+	| Div => "Div"
+	| Empty => "Empty"
+	| _ => "cualquier otra"
+
+ Las excepciones, incluso se pueden pasar como parametros, etc.
+
+ fun f e = raise e;
+ f Div;
+
+ En ML esta definido hasta que hacer cuando algo sale mal.
+
+ -----------------OTRO TEMA-------------------
+ MODULOS
+
+ Equivalente a las librerias en los lenguajes de programación.
+ Un modulo es algo que tiene valores ( pueden ser constantes, funciones
+ datatypes, excepciones, etc) y que puede "exportar" algunos de ellos, 
+ para que otro lo use.
+
+ El mosml tiene varios modulos predefinidos ( la gran mayoria son estandares)
+ y se pueden ver (desde el interprete) con:
+	help "lib";
+ La ayuda de algun modulo en particular (por ejemplo Int) se obtiene con:
+	help "Int";
+
+ Por razones de consumo de memoria, el interprete, NO EL COMPILADOR, necesitan
+ precargar un modulo.
+
+ Nota: SML/NJ precarga todos los modulos, se debia tener una maquina potente.
+
+ Ejemplo: para cargar el mdulo "List":
+	load "List";
+
+ Ahora se puede usar un valor exportado por List asi (ejemplo):
+
+	List.partition
+			La funcion partition que esta en el modulo List
+
+ Para no tener que cualificar partition con List.partition, se puede hacer
+ varias cosas:
+
+  a) val mipart = List.partition
+
+  b) open List;
+  partition
+
+ Ver:
+    load "Int"; (* tiene comillas -> nombre de un archivo *)
+    open Int;   (* no tiene comillas -> es el nombre de un modulo *)
+
+ Por supuesto, podemos definir nuevos modulos.
+ N.B.: ML llama estructuras a los modulos
+
+ Definamos una estructura:   
+
+  structure S = 
+  struct			(* como un parentesis abridor *)
+        val n = 5
+        fun f(x,y) = x + y;
+  end;
+
+ S exporta {f: int * int -> int n : int }
+ 
+ El gran avance (segun un tal Reinols): un modulo tiene un tipo. 
+ Este "tipo" se conoce como una "signatura". El "tipo" de un modulo
+ es tambien los valores que exporta.
+ 
+ Una signatura se declara asi:
+ 
+    signature SIG =
+    sig
+        val x : int
+        val f : real -> int
+    end;
+
+ Una vez escrito esto hemos declarado el tipo de una estructura.
+ Dice que tiene que ofrecer una estructura para tener ese tipo, como
+ una interface.
+
+ Ahora podemos forzar el tipo de una estructura.
+
+   structure S1:SIG =
+   struct 
+          val x = 5 val f = trunc
+   end;
+
+   structure S2:SIG =
+   struct  
+     val x = 10 val f = floor
+   end;
+
+ Se puede hacer mejor: mediante una "signatura opaca"
+
+   strucutre S3:>SIG = (* signatura opaca *) 
+   struct
+         val x = 7 val y = 12 val f = ceil
+   end;
+
+ A continuacion: FUNCTORES ("Si usted me da una estructura, yo le doy otra ")
+ Un FUNCTOR es algo parecido a un TEMPLATE de C++.
+
+ Ejemplo: quicksort
+
+  1° intento:	fun qsort [] = []
+ 		| qsort(h::s) = 
+		    let val (me,M) = List.partition( fn x => x <= h ) s
+		    in qsort(me)@[h]@qsort(M)
+
+ El tipo de qsort es:
+	qsort : int List -> int List
+ Mosml lo infiere del operador de comparacion elegido "<="
+
+ Tratemos de generalizar:
+ Podemos usar una funcion
+                 --
+ compare(x,y) = / LESSER (x<y)
+                | EQUAL ( x = y )
+		\ GREATER ( x > y )
+ 		 --
+
+   fun qsort _ [] = []
+   | qsort c (h::s) = 
+       let val (m, Me) = List.partition ( fn x => c(x,h) = LESSER ) s
+       in ( qsort c m )@[h]@(qsort c Me) end;
+
+ Tipo de qsort:
+  ( 'a * 'a -> order ) -> 'a List -> 'a List
+
+
+ ¿Podemos conseguir un qsort general y con un solo argumento?
+ Si, usando functores.
+ 
+ Un functor es una funcion entre estrucutras 
+   estructura con signatura s -> estructura con signatura s'
+
+ Para qsort puede ser:
+   signature SIG = 
+   sig
+       type t
+       val cmp : t * t -> order
+   end;
+
+   functor QS (s:SIG) =
+   struct 
+      fun qsort [] = []
+      | qsort (h::s) =
+         let val (m,Me) = List.partition (fn x => s.cmp(x,h) = LESS ) s
+         in qsort(m)@[h]@qsort(Me) end
+   end;
+
+	   Otra forma equivalente:
+
+	   functor QS (s:SIG) : sig val qsort : s.t list -> s.t list end =
+	   struct 
+	      fun qsort [] = []
+	      | qsort (h::s) =
+	         let val (m,Me) = List.partition (fn x => s.cmp(x,h) = LESS ) s
+	         in qsort(m)@[h]@qsort(Me) end
+	   end;
+
+ Tratemos de usar esto:
+ 	load "Int";
+	structure si =
+	struct
+	   type t = int
+	   val cmp = Int.compare
+	end;
+
+  structure qsi = QS( si );
+
+  qsi.qsort[ 3, 2 , 1 , 4 ];
+
+  (*Un quicsort para reales *)
+   load "Real";
+   structure sr =
+   struct
+      type t = real
+      val cmp = Real.compare
+   end;
+
+  structure qsr = QS( sr );
+
+  qsr.qsort[ 3.0 , 2.0 , 1.0 ];
+
